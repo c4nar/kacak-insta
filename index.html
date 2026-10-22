@@ -26,7 +26,8 @@ input,textarea{font-family:inherit;font-size:15px}
 @keyframes cardIn{from{opacity:0;transform:translateY(26px) scale(.96)}to{opacity:1;transform:none}}
 .login-logo{font-size:36px;font-weight:900;background:var(--grad);background-size:200% 200%;-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:4px;letter-spacing:-1px;animation:logoShift 4s ease infinite}
 @keyframes logoShift{0%,100%{background-position:0% 50%}50%{background-position:100% 50%}}
-.login-sub{color:#b8b8c8;font-size:13.5px;margin-bottom:22px}
+.login-sub{color:#b8b8c8;font-size:13.5px;margin-bottom:20px}
+.login-hint{color:#6a6a80;font-size:11.5px;margin-top:14px}
 #loginAvatar{width:86px;height:86px;border-radius:50%;margin:0 auto 14px;display:flex;align-items:center;justify-content:center;font-size:34px;font-weight:800;color:#fff;background:var(--grad);box-shadow:0 8px 24px rgba(214,41,118,.45);overflow:hidden;position:relative;transition:transform .2s}
 #loginAvatar img{width:100%;height:100%;object-fit:cover;position:absolute;inset:0}
 #loginNamePrev{font-weight:700;font-size:19px;min-height:24px;margin-bottom:10px;color:#eee}
@@ -111,7 +112,6 @@ input,textarea{font-family:inherit;font-size:15px}
 .file-btn{display:block;width:100%;padding:11px;border:1px dashed var(--border);border-radius:11px;text-align:center;color:var(--muted);font-size:13.5px;cursor:pointer;margin-bottom:12px}
 .file-btn:hover{border-color:var(--blue);color:var(--blue)}
 
-/* lightbox */
 #lightbox{position:fixed;inset:0;background:rgba(0,0,0,.92);display:none;align-items:center;justify-content:center;z-index:80}
 #lightbox.open{display:flex}
 #lightbox img{max-width:94vw;max-height:88dvh;border-radius:8px}
@@ -127,10 +127,7 @@ input,textarea{font-family:inherit;font-size:15px}
 .call-btn.end{background:#ed4956}
 .call-btn.ans{background:#2ecc71}
 #localVideo{position:absolute;bottom:20px;right:16px;width:110px;height:150px;border-radius:12px;object-fit:cover;border:2px solid #444;display:none}
-.ringing{animation:ringShake 1.2s infinite}
-@keyframes ringShake{0%,100%{transform:rotate(0)}20%{transform:rotate(-12deg)}40%{transform:rotate(12deg)}60%{transform:rotate(-8deg)}80%{transform:rotate(8deg)}}
 
-/* ---------- MOBILE ---------- */
 @media (max-width:768px){
   #sidebar{width:100%;min-width:0;border-right:none}
   #main{display:none}
@@ -160,6 +157,7 @@ input,textarea{font-family:inherit;font-size:15px}
     <div class="login-err" id="loginErr"></div>
     <div class="color-row" id="colorRow"></div>
     <button class="btn-primary" id="loginBtn" disabled>Adı Sahiplen &amp; Genel'e Katıl</button>
+    <div class="login-hint">Her sekme ayrı bir kullanıcıdır — test için sayfayı ikinci bir sekmede aç.</div>
   </div>
 </div>
 
@@ -278,17 +276,22 @@ const LS = {
   get(k, d){ try{ const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; }catch(e){ return d; } },
   set(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); return true; }catch(e){ console.warn("quota", e); return false; } }
 };
-const K = { users:"ki_users", groups:"ki_groups", me:"ki_me", msg:r=>"ki_msgs_"+r };
+const SS = {
+  get(k){ try{ return sessionStorage.getItem(k); }catch(e){ return null; } },
+  set(k,v){ try{ sessionStorage.setItem(k, v); }catch(e){} }
+};
+const K = { users:"ki_users", groups:"ki_groups", me:"ki_me", ping:"ki_ping", msg:r=>"ki_msgs_"+r };
 const COLORS = ["#262626","#e1306c","#8e44ad","#0095f6","#2ecc71","#f39c12","#e74c3c"];
 const RGB = "rgb";
 const C4NAR = "c4nar";
 
 let users  = LS.get(K.users, {});
 let groups = LS.get(K.groups, {});
-let me     = LS.get(K.me, null);
+let me     = SS.get(K.me);           // HER SEKME AYRI KULLANICI
 let currentRoom = null;
+let appActive = false;
 
-/* ================= SES EFEKTLERİ (Web Audio, dosyasız) ================= */
+/* ================= SES EFEKTLERİ ================= */
 let actx = null;
 function ac(){ if(!actx){ try{ actx = new (window.AudioContext||window.webkitAudioContext)(); }catch(e){} } if(actx && actx.state==="suspended") actx.resume(); return actx; }
 function beep(freq, dur, type, vol, when){
@@ -303,27 +306,37 @@ function beep(freq, dur, type, vol, when){
   o.start(t); o.stop(t+dur+0.05);
 }
 const SFX = {
-  send(){ beep(620,.09,"sine",.15,0); beep(920,.12,"sine",.12,.06); },           // fısıltı-çıkış
-  receive(){ beep(880,.12,"sine",.16,0); beep(1318,.16,"sine",.13,.08); },        // gelen zil
-  login(){ [523,659,784,1046].forEach((f,i)=>beep(f,.22,"triangle",.14,i*.09)); },// giriş arpeji
-  pop(){ beep(440,.07,"square",.06,0); },                                        // tık
+  send(){ beep(620,.09,"sine",.15,0); beep(920,.12,"sine",.12,.06); },
+  receive(){ beep(880,.12,"sine",.16,0); beep(1318,.16,"sine",.13,.08); },
+  login(){ [523,659,784,1046].forEach((f,i)=>beep(f,.22,"triangle",.14,i*.09)); },
+  pop(){ beep(440,.07,"square",.06,0); },
   group(){ beep(660,.12,"triangle",.13,0); beep(990,.18,"triangle",.11,.09); },
-  callEnd(){ beep(520,.15,"sawtooth",.1,0); beep(330,.28,"sawtooth",.1,.1); }      // kapanış inişi
+  callEnd(){ beep(520,.15,"sawtooth",.1,0); beep(330,.28,"sawtooth",.1,.1); }
 };
 let ringTimer = null;
-function startRing(){ stopRing(); SFX.ring = ()=>{ beep(1200,.18,"sine",.16,0); beep(1200,.18,"sine",.16,.35); }; ringTimer = setInterval(()=>SFX.ring(), 1600); SFX.ring(); }
+function startRing(){ stopRing(); const ring = ()=>{ beep(1200,.18,"sine",.16,0); beep(1200,.18,"sine",.16,.35); }; ringTimer = setInterval(ring, 1600); ring(); }
 function stopRing(){ if(ringTimer){ clearInterval(ringTimer); ringTimer=null; } }
 
-/* cross-tab sync */
+/* ================= SYNC (BroadcastChannel + storage event yedeği) ================= */
 const bc = ("BroadcastChannel" in window) ? new BroadcastChannel("ki_sync") : null;
 let seenMsgIds = {};
-function scanMsgIds(){ const s={}; Object.keys(groups).concat(["general"]).forEach(r=>{ const a=LS.get(K.msg(r),[]); const m=a[a.length-1]; if(m) s[r]=m.id; }); return s; }
-function broadcast(){ if(bc) bc.postMessage("sync"); }
-if(bc) bc.onmessage = ()=>{
-  users = LS.get(K.users,{}); groups = LS.get(K.groups,{});
+function scanMsgIds(){
+  const s = {};
+  const roomIds = ["general"].concat(Object.keys(groups));
+  roomIds.forEach(r=>{ const a = LS.get(K.msg(r), []); if(a.length) s[r] = a[a.length-1].id; });
+  return s;
+}
+function broadcast(){
+  if(bc) try{ bc.postMessage("sync"); }catch(e){}
+  try{ localStorage.setItem(K.ping, String(Date.now())); }catch(e){}
+}
+function onSync(){
+  users = LS.get(K.users, {});
+  groups = LS.get(K.groups, {});
+  if(!appActive || !me) return;          // giriş ekranındayken sadece veriyi taze tut
   const now = scanMsgIds();
   for(const r in now){
-    if(seenMsgIds[r] && now[r] !== seenMsgIds[r]){
+    if(now[r] !== seenMsgIds[r]){
       const arr = LS.get(K.msg(r), []);
       const m = arr[arr.length-1];
       if(m && m.from !== me) SFX.receive();
@@ -331,15 +344,14 @@ if(bc) bc.onmessage = ()=>{
   }
   seenMsgIds = now;
   renderRooms(); renderMessages(); renderMe();
-};
+}
+if(bc) bc.onmessage = onSync;
 window.addEventListener("storage", e=>{
-  if(e.key===K.users||e.key===K.groups){
-    users=LS.get(K.users,{}); groups=LS.get(K.groups,{});
-    renderRooms(); renderMessages(); renderMe();
-  }
+  if(!e.key) return;
+  if(e.key===K.users || e.key===K.groups || e.key===K.ping || e.key.indexOf("ki_msgs_")===0) onSync();
 });
-function saveUsers(){ if(!LS.set(K.users, users)) alert("Depolama dolu — fotoğraf çok büyük olabilir."); broadcast(); syncUsers(); }
-function saveGroups(){ if(!LS.set(K.groups, groups)) alert("Depolama dolu."); broadcast(); syncGroups(); }
+function saveUsers(){ if(!LS.set(K.users, users)) alert("Depolama dolu — fotoğraf çok büyük olabilir."); broadcast(); }
+function saveGroups(){ if(!LS.set(K.groups, groups)) alert("Depolama dolu."); broadcast(); }
 function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
 function esc(s){ return String(s).replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
 function nameHTML(name){
@@ -347,7 +359,8 @@ function nameHTML(name){
   if(u.color === RGB) return `<span class="rgb-animated" style="font-weight:800">${esc(name)}</span>`;
   return `<span style="color:${u.color||"#262626"}">${esc(name)}</span>`;
 }
-function avatarHTML(name, cls=""){
+function avatarHTML(name, cls){
+  cls = cls || "";
   const u = users[name] || {};
   const img = u.photo ? `<img src="${u.photo}" alt="">` : "";
   return `<div class="avatar ${cls}">${img}${esc((name||"?")[0].toUpperCase())}</div>`;
@@ -380,15 +393,16 @@ buildColorRow(document.getElementById("colorRow"), c=>{ chosenColor=c; paintPrev
 function paintPreview(){
   const n = nameInput.value.trim();
   loginErr.textContent = (n && users[n]) ? "Bu ad zaten kapılmış." : "";
-  if(!n){ namePrev.innerHTML = `<span style="color:#55556a">adını yaz, rengin belirsin…</span>`; loginAv.innerHTML = "?"; return; }
+  if(!n){ namePrev.innerHTML = `<span style="color:#55556a">adını yaz, rengin belirsin…</span>`; loginAv.textContent = "?"; loginAv.style.background = ""; return; }
   namePrev.innerHTML = (chosenColor === RGB) ? `<span class="rgb-animated">${esc(n)}</span>` : `<span style="color:${chosenColor}">${esc(n)}</span>`;
-  loginAv.innerHTML = esc(n[0].toUpperCase());
+  loginAv.textContent = n[0].toUpperCase();
   loginAv.style.background = (chosenColor===RGB) ? "" : chosenColor;
 }
 nameInput.addEventListener("input", ()=>{
   const v = nameInput.value.trim();
   loginBtn.disabled = !v;
-  buildColorRow(document.getElementById("colorRow"), c=>{ chosenColor=c; paintPreview(); }, (chosenColor===RGB && !rgbAllowed(v)) ? COLORS[0] : chosenColor, rgbAllowed(v));
+  if(chosenColor===RGB && !rgbAllowed(v)) chosenColor = COLORS[0];
+  buildColorRow(document.getElementById("colorRow"), c=>{ chosenColor=c; paintPreview(); }, chosenColor, rgbAllowed(v));
   paintPreview();
 });
 nameInput.addEventListener("keydown", e=>{ if(e.key==="Enter" && !loginBtn.disabled) loginBtn.click(); });
@@ -396,10 +410,12 @@ nameInput.addEventListener("keydown", e=>{ if(e.key==="Enter" && !loginBtn.disab
 loginBtn.onclick = ()=>{
   const name = nameInput.value.trim();
   if(!name) return;
+  users = LS.get(K.users, {});           // taze kontrol — başka sekme kapmış olabilir
   if(users[name]){ loginErr.textContent = "Bu ad zaten kapılmış."; return; }
+  if(chosenColor===RGB && name!==C4NAR) chosenColor = COLORS[0];
   users[name] = { color: chosenColor, photo: null, claimedAt: Date.now() };
   me = name;
-  LS.set(K.me, me);
+  SS.set(K.me, me);
   saveUsers();
   SFX.login();
   enterApp();
@@ -407,6 +423,7 @@ loginBtn.onclick = ()=>{
 
 /* ================= APP BOOT ================= */
 function enterApp(){
+  appActive = true;
   document.getElementById("loginScreen").style.display = "none";
   document.getElementById("app").classList.add("active");
   renderMe(); renderRooms();
@@ -414,18 +431,18 @@ function enterApp(){
   openRoom("general");
 }
 function renderMe(){
-  const u = users[me] || {};
+  if(!me) return;
   document.getElementById("meName").innerHTML = nameHTML(me);
   const av = document.getElementById("meAvatar");
-  av.outerHTML = avatarHTML(me).replace('class="avatar"','class="avatar" id="meAvatar"');
-  if(u.photo){ document.getElementById("meAvatar").innerHTML = `<img src="${u.photo}">`; }
+  const u = users[me] || {};
+  av.innerHTML = (u.photo ? `<img src="${u.photo}" alt="">` : "") + esc(me[0].toUpperCase());
 }
 
 /* ================= ROOMS ================= */
 function allRooms(){
   const list = [{ id:"general", name:"Genel", photo:null, isGroup:true, members:Object.keys(users) }];
   Object.entries(groups).forEach(([id,g])=>{
-    if(g.members.includes(me)) list.push({ id, ...g });
+    if(g.members.includes(me)) list.push({ id:id, name:g.name, photo:g.photo, members:g.members, createdBy:g.createdBy });
   });
   return list;
 }
@@ -436,6 +453,7 @@ function lastMsg(roomId){
 const icoImg = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>';
 const icoMic = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/></svg>';
 function renderRooms(){
+  if(!me) return;
   const rl = document.getElementById("roomList");
   rl.innerHTML = "";
   allRooms().forEach(r=>{
@@ -443,35 +461,33 @@ function renderRooms(){
     let prev = "Henüz mesaj yok";
     if(m){
       const who = m.from === me ? "Sen" : m.from;
-      prev = who + ": " + (m.type==="image" ? "Fotoğraf "+icoImg : m.type==="audio" ? "Sesli mesaj "+icoMic : m.text.slice(0,40));
+      prev = who + ": " + (m.type==="image" ? "Fotoğraf " + icoImg : m.type==="audio" ? "Sesli mesaj " + icoMic : m.text.slice(0,40));
     }
     const photo = r.photo ? `<img src="${r.photo}">` : "";
     const el = document.createElement("div");
     el.className = "room-item" + (r.id===currentRoom ? " active" : "");
-    el.innerHTML = `
-      <div class="avatar">${photo}${esc((r.name||"?")[0].toUpperCase())}</div>
-      <div class="room-meta">
-        <div class="room-name">${esc(r.name)}</div>
-        <div class="room-preview">${esc(prev)}</div>
-      </div>`;
+    el.innerHTML =
+      '<div class="avatar">' + photo + esc((r.name||"?")[0].toUpperCase()) + '</div>' +
+      '<div class="room-meta">' +
+        '<div class="room-name">' + esc(r.name) + '</div>' +
+        '<div class="room-preview">' + esc(prev) + '</div>' +
+      '</div>';
     el.onclick = ()=>{ SFX.pop(); openRoom(r.id); };
     rl.appendChild(el);
   });
 }
 
 function openRoom(id){
+  if(!me) return;
   currentRoom = id;
   document.getElementById("emptyState").style.display = "none";
   document.getElementById("chatView").classList.add("active");
   document.body.classList.add("in-chat");
-  const r = allRooms().find(x=>x.id===id);
+  const r = allRooms().find(x=>x.id===id) || { id:"general", name:"Genel", photo:null };
   document.getElementById("chatTitle").textContent = r.name;
-  document.getElementById("chatSub").textContent = r.id==="general"
-    ? Object.keys(users).length + " üye"
-    : r.members.length + " üye";
+  document.getElementById("chatSub").textContent = (r.id==="general" ? Object.keys(users).length : (r.members||[]).length) + " üye";
   const av = document.getElementById("chatAvatar");
-  av.outerHTML = avatarHTML(r.name,"sm").replace('class="avatar sm"','class="avatar sm" id="chatAvatar"');
-  if(r.photo){ document.getElementById("chatAvatar").innerHTML = `<img src="${r.photo}">`; }
+  av.innerHTML = (r.photo ? `<img src="${r.photo}" alt="">` : "") + esc((r.name||"?")[0].toUpperCase());
   document.getElementById("roomInfoBtn").style.display = r.id==="general" ? "none" : "";
   renderMessages(); renderRooms();
   document.getElementById("msgArea").scrollTop = 1e9;
@@ -489,7 +505,6 @@ function getMsgs(room){ return LS.get(K.msg(room), []); }
 function pushMsg(room, msg){
   const arr = getMsgs(room);
   arr.push(msg);
-  syncMsg(room, msg);
   if(arr.length > 200) arr.splice(0, arr.length-200);
   if(!LS.set(K.msg(room), arr)){ alert("Depolama dolu — fotoğraf çok büyük olabilir."); return; }
   if(msg.from === me) SFX.send(); else SFX.receive();
@@ -499,7 +514,7 @@ function pushMsg(room, msg){
 function sendText(){
   const inp = document.getElementById("msgInput");
   const t = inp.value.trim();
-  if(!t || !currentRoom) return;
+  if(!t || !currentRoom || !me) return;
   inp.value = "";
   pushMsg(currentRoom, { id:uid(), from:me, type:"text", text:t, ts:Date.now() });
 }
@@ -508,7 +523,7 @@ document.getElementById("msgInput").addEventListener("keydown", e=>{ if(e.key===
 
 function fmtTime(ts){ return new Date(ts).toLocaleTimeString("tr-TR", {hour:"2-digit", minute:"2-digit"}); }
 function renderMessages(){
-  if(!currentRoom) return;
+  if(!currentRoom || !me) return;
   const area = document.getElementById("msgArea");
   const arr = getMsgs(currentRoom);
   let html = "";
@@ -517,7 +532,7 @@ function renderMessages(){
     const day = new Date(m.ts).toDateString();
     if(day !== lastDay){
       lastDay = day;
-      html += `<div class="day-sep"><span>${esc(new Date(m.ts).toLocaleDateString("tr-TR", {day:"numeric",month:"short"}))}</span></div>`;
+      html += '<div class="day-sep"><span>' + esc(new Date(m.ts).toLocaleDateString("tr-TR", {day:"numeric",month:"short"})) + '</span></div>';
     }
     const mine = m.from === me;
     let body = "";
@@ -525,10 +540,9 @@ function renderMessages(){
     else if(m.type === "audio") body = `<audio controls src="${m.text}" style="max-width:220px"></audio>`;
     else body = esc(m.text);
     const sender = (!mine) ? `<div class="msg-sender">${nameHTML(m.from)}</div>` : "";
-    html += `<div class="msg-row ${mine?"mine":""}">
-      ${mine?"":avatarHTML(m.from,"sm")}
-      <div class="msg-bubble">${sender}${body}<div class="msg-time">${fmtTime(m.ts)}</div></div>
-    </div>`;
+    html += `<div class="msg-row ${mine?"mine":""}">` +
+      (mine ? "" : avatarHTML(m.from,"sm")) +
+      `<div class="msg-bubble">${sender}${body}<div class="msg-time">${fmtTime(m.ts)}</div></div></div>`;
   });
   area.innerHTML = html;
   area.querySelectorAll("img.shared").forEach(img=>{
@@ -538,7 +552,7 @@ function renderMessages(){
 }
 document.getElementById("lightbox").onclick = ()=>{ document.getElementById("lightbox").classList.remove("open"); SFX.pop(); };
 
-/* ================= PHOTO (sıkıştırılmış, kota dostu) ================= */
+/* ================= PHOTO ================= */
 function fileToDataURL(file, max, quality, cb){
   const rd = new FileReader();
   rd.onload = ()=>{
@@ -549,8 +563,7 @@ function fileToDataURL(file, max, quality, cb){
       const cv = document.createElement("canvas");
       cv.width = w; cv.height = h;
       cv.getContext("2d").drawImage(img, 0, 0, w, h);
-      try{ cb(cv.toDataURL("image/jpeg", quality)); }
-      catch(e){ alert("Görsel işlenemedi."); }
+      try{ cb(cv.toDataURL("image/jpeg", quality)); }catch(e){ alert("Görsel işlenemedi."); }
     };
     img.onerror = ()=> alert("Görsel okunamadı.");
     img.src = rd.result;
@@ -608,10 +621,10 @@ document.getElementById("newGroupBtn").onclick = ()=>{
   Object.keys(users).filter(n=>n!==me).forEach(n=>{
     const l = document.createElement("label");
     l.className = "member-chk";
-    l.innerHTML = `${avatarHTML(n,"sm")}<span>${nameHTML(n)}</span><input type="checkbox" value="${esc(n)}" style="margin-left:auto">`;
+    l.innerHTML = avatarHTML(n,"sm") + "<span>" + nameHTML(n) + '</span><input type="checkbox" value="' + esc(n) + '" style="margin-left:auto">';
     ml.appendChild(l);
   });
-  if(!ml.children.length) ml.innerHTML = `<div style="color:var(--muted);font-size:13px;padding:8px 0">Henüz başka kullanıcı yok — sayfayı başka bir sekmede açıp ad kaparak ekle.</div>`;
+  if(!ml.children.length) ml.innerHTML = '<div style="color:var(--muted);font-size:13px;padding:8px 0">Henüz başka kullanıcı yok — sayfayı başka bir sekmede açıp ad kaparak ekle.</div>';
   document.getElementById("groupName").value = "";
   document.getElementById("groupPhotoFile").value = "";
   document.getElementById("imgPreview").style.display = "none";
@@ -634,7 +647,7 @@ document.getElementById("createGroupBtn").onclick = ()=>{
   const members = [me];
   document.querySelectorAll("#memberList input:checked").forEach(c=> members.push(c.value));
   const id = "g_" + uid();
-  groups[id] = { name, photo: groupPhotoData, members, createdBy: me };
+  groups[id] = { name:name, photo: groupPhotoData, members:members, createdBy: me };
   groupPhotoData = null;
   saveGroups();
   SFX.group();
@@ -648,9 +661,9 @@ document.getElementById("roomInfoBtn").onclick = ()=>{
   SFX.pop();
   document.getElementById("infoTitle").textContent = r.name;
   document.getElementById("infoBody").innerHTML =
-    (r.photo?`<img src="${r.photo}" style="width:80px;height:80px;border-radius:50%;display:block;margin:0 auto 12px;object-fit:cover">`:"")+
+    (r.photo ? `<img src="${r.photo}" style="width:80px;height:80px;border-radius:50%;display:block;margin:0 auto 12px;object-fit:cover">` : "") +
     `<div style="font-size:13px;color:var(--muted);margin-bottom:8px">${r.members.length} üye</div>` +
-    r.members.map(m=>`<div class="member-chk">${avatarHTML(m,"sm")}<span>${nameHTML(m)}</span>${m===r.createdBy?'<span style="margin-left:auto;font-size:11px;color:var(--muted)">kurucu</span>':""}</div>`).join("");
+    r.members.map(m=>'<div class="member-chk">' + avatarHTML(m,"sm") + "<span>" + nameHTML(m) + "</span>" + (m===r.createdBy ? '<span style="margin-left:auto;font-size:11px;color:var(--muted)">kurucu</span>' : "") + "</div>").join("");
   document.getElementById("infoModal").classList.add("open");
 };
 document.getElementById("closeInfoBtn").onclick = ()=> document.getElementById("infoModal").classList.remove("open");
@@ -659,6 +672,7 @@ document.getElementById("closeInfoBtn").onclick = ()=> document.getElementById("
 const profileModal = document.getElementById("profileModal");
 let profileColor = COLORS[0];
 document.getElementById("meRow").onclick = ()=>{
+  if(!me) return;
   SFX.pop();
   document.getElementById("newNameInput").value = me;
   document.getElementById("profileErr").textContent = "";
@@ -673,18 +687,19 @@ document.getElementById("saveProfileBtn").onclick = ()=>{
   const nn = document.getElementById("newNameInput").value.trim();
   const err = document.getElementById("profileErr");
   if(!nn){ err.textContent = "İsim boş olamaz."; return; }
+  users = LS.get(K.users, {});
   if(nn !== me && users[nn]){ err.textContent = "Bu ad zaten kapılmış."; return; }
-  if(profileColor === RGB && nn !== C4NAR) profileColor = COLORS[0];   // RGB yalnız c4nar'a
+  if(profileColor === RGB && nn !== C4NAR) profileColor = COLORS[0];
   const f = document.getElementById("profilePhotoFile").files[0];
   const apply = (photo)=>{
     const oldPhoto = (users[me]||{}).photo;
     if(nn !== me){
-      users[nn] = { ...(users[me]||{}), color: profileColor, photo: (photo !== undefined ? photo : oldPhoto) };
+      users[nn] = { color: profileColor, photo: (photo !== undefined ? photo : oldPhoto), claimedAt: (users[me]||{}).claimedAt || Date.now() };
       delete users[me];
       Object.values(groups).forEach(g=>{ g.members = g.members.map(m=> m===me?nn:m); if(g.createdBy===me) g.createdBy=nn; });
       saveGroups();
       me = nn;
-      LS.set(K.me, me);
+      SS.set(K.me, nn);
     } else {
       users[me] = users[me] || {};
       users[me].color = profileColor;
@@ -710,13 +725,13 @@ function startCall(kind){
   const r = allRooms().find(x=>x.id===callRoom);
   showCallUI(r.name, kind, false);
   startRing();
-  if(callChan) callChan.postMessage({ type:"ring", room:callRoom, from:me, kind });
+  if(callChan) callChan.postMessage({ type:"ring", room:callRoom, from:me, kind:kind });
 }
 async function showCallUI(peerName, kind, isIncoming){
   document.getElementById("callPeerName").textContent = peerName;
-  document.getElementById("callStatus").textContent = isIncoming ? "Gelen "+(kind==="video"?"görüntülü":"sesli")+" arama…" : "Aranıyor…";
+  document.getElementById("callStatus").textContent = isIncoming ? "Gelen " + (kind==="video" ? "görüntülü" : "sesli") + " arama…" : "Aranıyor…";
   document.getElementById("answerBtn").style.display = isIncoming ? "" : "none";
-  document.getElementById("callPeerAvatar").innerHTML = esc((peerName||"?")[0].toUpperCase());
+  document.getElementById("callPeerAvatar").textContent = (peerName||"?")[0].toUpperCase();
   callOverlay.classList.add("open");
   try{
     callStream = await navigator.mediaDevices.getUserMedia({audio:true, video: kind==="video"});
@@ -754,7 +769,7 @@ if(callChan) callChan.onmessage = ev=>{
   if(d.type === "ring" && d.room === currentRoom){
     incomingCall = d;
     const r = allRooms().find(x=>x.id===d.room);
-    showCallUI(d.from + " · " + (r?r.name:""), d.kind, true);
+    showCallUI(d.from + " · " + (r ? r.name : ""), d.kind, true);
     startRing();
   }
   if(d.type === "answer" && d.room === callRoom){
@@ -766,108 +781,9 @@ if(callChan) callChan.onmessage = ev=>{
   }
 };
 
-/* ================= CİHAZLAR ARASI SENKRON (paylaşılan db) ================= */
-let DB = null, syncWarned = false, pushedMe = null, pushedSig = null;
-let sigG = {}, pendQ = [], pendUsers = false, pendGroups = false, firstMsgs = true;
-function sid(s){ return Array.from(new TextEncoder().encode(String(s))).map(b=>b.toString(16).padStart(2,"0")).join(""); }
-function syncFail(e){
-  console.warn("sync", e);
-  if(syncWarned) return;
-  syncWarned = true;
-  alert(e && e.code === "invalid_argument"
-    ? "Mesaj karşıya gitmedi: bu sayfada yazma yetkin yok (sayfa sahibi seni Katkıcı yapmalı) ya da içerik çok büyük."
-    : "Senkron hatası, tekrar dene.");
-}
-function syncUsers(){
-  if(!DB){ pendUsers = true; return; }
-  if(!me || !users[me]) return;
-  const s = JSON.stringify(users[me]);
-  if(pushedMe === me && pushedSig === s) return;
-  const old = pushedMe; pushedMe = me; pushedSig = s;
-  const col = DB.collection("users");
-  col.doc(sid(me)).set({ name: me, ...users[me] })
-    .then(()=>{ if(old && old !== me) return col.doc(sid(old)).delete(); })
-    .catch(syncFail);
-}
-function syncGroups(){
-  if(!DB){ pendGroups = true; return; }
-  Object.entries(groups).forEach(([id,g])=>{
-    const s = JSON.stringify(g);
-    if(sigG[id] === s) return;
-    sigG[id] = s;
-    DB.collection("groups").doc(id).set(g).catch(syncFail);
-  });
-}
-function syncMsg(room, msg){
-  const doc = { room, from: msg.from, type: msg.type, text: msg.text, ts: msg.ts };
-  if(!DB){ pendQ.push([msg.id, doc]); return; }
-  DB.collection("msgs").doc(msg.id).set(doc).catch(syncFail);
-}
-function syncRender(){
-  if(!(me && users[me])) return;
-  renderMe(); renderRooms(); renderMessages();
-  if(currentRoom === "general") document.getElementById("chatSub").textContent = Object.keys(users).length + " üye";
-}
-function onUsersSnap(snap){
-  const remote = {};
-  snap.docs.forEach(d=>{ const x = d.data(); if(x && x.name){ const { name, ...rest } = x; remote[name] = rest; } });
-  const mine = me ? users[me] : null;
-  users = remote;
-  if(me && mine && !users[me]){
-    users[me] = mine;
-    if(!snap.metadata.fromCache) syncUsers();
-  }
-  LS.set(K.users, users);
-  if(!me) paintPreview();
-  syncRender();
-}
-function onGroupsSnap(snap){
-  const g = {};
-  snap.docs.forEach(d=>{ const x = d.data(); if(x && Array.isArray(x.members)){ g[d.id] = JSON.parse(JSON.stringify(x)); sigG[d.id] = JSON.stringify(g[d.id]); } });
-  Object.keys(groups).forEach(id=>{ if(!g[id]) g[id] = groups[id]; });
-  groups = g;
-  LS.set(K.groups, groups);
-  syncRender();
-}
-function onMsgsSnap(snap){
-  const byRoom = {};
-  snap.docs.forEach(d=>{ const m = d.data(); if(m && m.room){ (byRoom[m.room] = byRoom[m.room] || []).push({ id:d.id, from:m.from, type:m.type, text:m.text, ts:m.ts }); } });
-  Object.keys(byRoom).forEach(r=>{
-    const have = LS.get(K.msg(r), []);
-    const ids = new Set(have.map(x=>x.id));
-    const add = byRoom[r].filter(x=>!ids.has(x.id));
-    if(!add.length) return;
-    let merged = have.concat(add).sort((a,b)=>a.ts-b.ts);
-    if(merged.length > 200) merged = merged.slice(-200);
-    while(merged.length && !LS.set(K.msg(r), merged)) merged = merged.slice(Math.ceil(merged.length/2));
-    const last = merged[merged.length-1];
-    if(!firstMsgs && last && last.from !== me && seenMsgIds[r] !== last.id) SFX.receive();
-    if(last) seenMsgIds[r] = last.id;
-  });
-  firstMsgs = false;
-  syncRender();
-}
-(async function initSync(){
-  try{
-    if(!(window.claude && window.claude.use)) return;
-    const db = await window.claude.use("db");
-    if(!db) return;
-    DB = db;
-    if(me) pushedMe = me;
-    db.collection("users").onSnapshot(onUsersSnap, e=>console.warn("users sync", e));
-    db.collection("groups").onSnapshot(onGroupsSnap, e=>console.warn("groups sync", e));
-    db.collection("msgs").orderBy("ts","desc").limit(500).onSnapshot(onMsgsSnap, e=>console.warn("msgs sync", e));
-    if(pendUsers){ pendUsers = false; syncUsers(); }
-    if(pendGroups){ pendGroups = false; syncGroups(); }
-    pendQ.splice(0).forEach(([id,doc])=> db.collection("msgs").doc(id).set(doc).catch(syncFail));
-  }catch(e){ console.warn("sync init", e); }
-})();
-
 /* ================= BOOT ================= */
 if(me && users[me]){
   enterApp();
-} else {
-  LS.set(K.me, null);
 }
 </script>
 </body>
